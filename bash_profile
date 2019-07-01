@@ -1,6 +1,6 @@
 function sourceIfExists {
-    if [ -f $0 ]; then
-        source $0
+    if [ -f $@ ]; then
+        source $@
     fi
 }
 
