@@ -10,6 +10,7 @@ sourceIfExists ~/.countdown
 sourceIfExists ~/.warn
 sourceIfExists ~/.bash_ios
 sourceIfExists ~/.work
+sourceIfExists ~/.utils.sh
 
 if [ -f ~/.bashrc ]; then
     . ~/.bashrc
