@@ -1,0 +1,4 @@
+function b() {
+    $@;
+   osascript -e 'tell application (path to frontmost application as text) to display dialog "Command Complete" buttons {"OK"} with icon stop'
+}

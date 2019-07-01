@@ -1,0 +1,9 @@
+[submodule "dotbot"]
+	path = dotbot
+	url = https://github.com/anishathalye/dotbot
+[submodule "bashmarks/bashmarks"]
+	path = bashmarks/bashmarks
+	url = https://github.com/huyng/bashmarks.git
+[submodule "dynamicaliases/src"]
+	path = dynamicaliases/src
+	url = git@github.com:Jearil/dynamicaliases.git

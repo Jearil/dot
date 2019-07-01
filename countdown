@@ -1,0 +1,15 @@
+function countdown(){
+   date1=$((`date +%s` + $1)); 
+   while [ "$date1" -ge `date +%s` ]; do 
+     echo -ne "$(date -ju -f %s $(($date1 - `date +%s`)) +%H:%M:%S)\r";
+     sleep 0.1
+   done
+   osascript -e 'tell application (path to frontmost application as text) to display dialog "Timer Complete" buttons {"OK"} with icon stop'
+}
+function stopwatch(){
+  date1=`date +%s`; 
+   while true; do 
+	echo -ne "$(date -ju -f %s $((`date +%s` - $date1)) +%H:%M:%S)\r"; 
+    sleep 0.1
+   done
+}

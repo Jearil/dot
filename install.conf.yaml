@@ -1,0 +1,19 @@
+- defaults:
+    shell:
+        stdout: true
+        stderr: true
+- clean: ['~']
+- link:
+    ~/.bash_profile: bash_profile
+    ~/.bashrc: bashrc
+    ~/.warn: warn
+    ~/.vimrc: vimrc
+    ~/.work: fb.sh
+    ~/.countdown: countdown
+
+- shell:
+    - [git submodule update --init --recursive, Installing submodules...]
+    - [./osx.sh, Updating OS X preferences...]
+    - [./bashmarks/bashmarks.sh, Installing Bashmarks...]
+    - [./dynamicaliases/da.sh, Installing Dynamic Aliases...]
+    - [./fonts/init.sh, Installing Hack Font...]
