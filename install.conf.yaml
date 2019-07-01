@@ -4,6 +4,7 @@
 - link:
     ~/.bash_profile: bash_profile
     ~/.bashrc: bashrc
+    ~/.bash_aliases: bash_aliases
     ~/.warn: warn
     ~/.vimrc: vimrc
     ~/.work: fb.sh
