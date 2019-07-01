@@ -10,6 +10,7 @@ Plugin 'gmarik/Vundle.vim'
 Bundle 'derekwyatt/vim-scala'
 Plugin 'octol/vim-cpp-enhanced-highlight'
 Plugin 'flazz/vim-colorschemes'
+:PluginInstall
 
 call vundle#end()
 set complete=.,w,b,u,t,i
