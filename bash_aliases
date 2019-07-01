@@ -1,0 +1,5 @@
+alias sb="mosh -6 sb"
+alias ls="ls -Gp"
+alias android_screencast="echo \"Use cmd-c to exit. Screencast stored in ./sdcard/screencast-video.mp4\"; adb shell screenrecord --verbose ./sdcard/screencast-video.mp4"
+alias rmorig="find . -name "*.orig" | xargs rm -rf"
+alias build="./scripts/auto_build.py"
