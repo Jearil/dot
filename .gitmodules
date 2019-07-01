@@ -6,4 +6,4 @@
 	url = https://github.com/huyng/bashmarks.git
 [submodule "dynamicaliases/src"]
 	path = dynamicaliases/src
-	url = git@github.com:Jearil/dynamicaliases.git
+	url = https://github.com/Jearil/dynamicaliases.git
