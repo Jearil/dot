@@ -7,7 +7,6 @@
     ~/.bash_aliases: bash_aliases
     ~/.warn: warn
     ~/.vimrc: vimrc
-    ~/.work: fb.sh
     ~/.countdown: countdown
     ~/.git-prompt.sh: git-prompt
     ~/.git-completion.bash: git-completion
