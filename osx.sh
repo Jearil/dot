@@ -1,6 +1,7 @@
 # OSX-only stuff. Abort if not OSX.
 if [[ ! `uname` == 'Darwin' ]]; then
-  return
+  echo "Not using OS X, skipping"
+  exit
 fi
 
 

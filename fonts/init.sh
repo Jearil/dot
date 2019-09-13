@@ -1,6 +1,6 @@
 # OSX-only stuff. Abort if not OSX.
 if [[ ! `uname` == 'Darwin' ]]; then
-  return
+    exit
 fi
 
 DIRECTORY=$(cd `dirname $0` && pwd)
