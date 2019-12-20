@@ -1,0 +1,2 @@
+# file descriptor limits should be increased
+ulimit -n 200000

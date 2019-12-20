@@ -26,9 +26,5 @@ sourceIfExists ~/.git-completion.bash
 
 # Add the android sdk tools
 export PATH=${PATH}:/opt/android_sdk/tools/bin
-export JAVA_HOME="$(/usr/libexec/java_home -v 1.8)"
 
 sourceIfExists "${HOME}/.iterm2_shell_integration.bash"
-
-# file descriptor limits should be increased
-ulimit -n 200000

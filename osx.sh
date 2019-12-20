@@ -32,6 +32,9 @@ defaults write com.apple.LaunchServices LSQuarantine -bool false
 # Increase sound quality for Bluetooth headphones/headsets
 defaults write com.apple.BluetoothAudioAgent "Apple Bitpool Min (editable)" -int 40
 
+# Link iOS bash
+ln -h bash_ios ~/.bash_ios
+
 ###############################################################################
 # General UI/UX                                                               #
 ###############################################################################
