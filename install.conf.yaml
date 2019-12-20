@@ -11,6 +11,7 @@
     ~/.git-prompt.sh: git-prompt
     ~/.git-completion.bash: git-completion
     ~/.utils.sh: utils.sh
+    ~/.tmux.conf: tmux
 
 - shell:
     - [git submodule update --init --recursive, Installing submodules...]
