@@ -51,3 +51,9 @@ setw -g window-status-bell-style 'fg=colour255 bg=colour1 bold'
 
 # messages
 set -g message-style 'fg=colour232 bg=colour16 bold'
+
+# mouse
+setw -g mouse on
+
+# colors
+set -g default-terminal "tmux-256color"

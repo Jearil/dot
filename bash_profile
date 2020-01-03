@@ -25,6 +25,6 @@ sourceIfExists ~/.git-completion.bash
 # source ~/.preexec.bash
 
 # Add the android sdk tools
-export PATH=${PATH}:/opt/android_sdk/tools/bin
+export PATH=${PATH}:/opt/android_sdk/tools/bin:~/.local/bin
 
 sourceIfExists "${HOME}/.iterm2_shell_integration.bash"

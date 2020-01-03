@@ -1,3 +1,6 @@
+" Get any work specific vim out of the way
+source ~/.vimrc_work
+
 syntax enable
 "let g:SuperTabDefaultCompletionType = "<c-x><c-u>"
 set nocompatible		" We're in vim mode instead of vi
