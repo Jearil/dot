@@ -12,9 +12,11 @@
     ~/.git-completion.bash: git-completion
     ~/.utils.sh: utils.sh
     ~/.tmux.conf: tmux
+    ~/.hgrc: hgrc
 
 - shell:
     - [git submodule update --init --recursive, Installing submodules...]
+    - [./hg-prompt.sh, Downloading hg-prompt...]
     - [./osx.sh, Updating OS X preferences...]
     - [./vim/install.sh, Setting up vim...]
     - [./bashmarks/bashmarks.sh, Installing Bashmarks...]

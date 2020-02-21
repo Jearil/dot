@@ -6,7 +6,7 @@ function sourceIfExists {
 
 sourceIfExists ~/.local/bin/bashmarks.sh
 sourceIfExists ~/.local/bin/dynamicaliases.sh
-sourceIfExists ~/.bash_work
+sourceIfExists ~/.bash_work.bash
 sourceIfExists ~/.bash_local
 
 if [ -f ~/.bash_aliases ]; then
