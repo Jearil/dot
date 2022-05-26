@@ -1,1 +1,19 @@
 [extensions]
+extdiff =
+strip = 
+
+[ui]
+merge = meld
+
+[merge-tools]
+meld.gui=True
+meld.check=changed
+meld.args=--auto-merge --label=$labellocal $local --label='merged' $base --label=$labelother $other -o $output
+
+[alias]
+pmeld = meld -r .^
+
+[google]
+upload.default-rev=chain
+mail.default-rev=chain
+presubmit.default-rev=.
