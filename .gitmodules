@@ -4,3 +4,7 @@
 [submodule "dynamicaliases/src"]
 	path = dynamicaliases/src
 	url = https://github.com/Jearil/dynamicaliases.git
+[submodule "dotbot"]
+	path = dotbot
+	url = https://github.com/anishathalye/dotbot
+	ignore = dirty

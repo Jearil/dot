@@ -17,7 +17,6 @@ Plugin 'flazz/vim-colorschemes'
 call vundle#end()
 set complete=.,w,b,u,t,i
 set tags=./tags,tags;$HOME
-colors base     		" dark color scheme
 "set nocp				" omnicppcomplete support
 set exrc 				" use .vimrc file per project(directory)
 set secure              " disable unsafe commands in local .vimrc
