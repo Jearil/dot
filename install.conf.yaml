@@ -7,6 +7,7 @@
     ~/.bash_aliases: bash_aliases
     ~/.warn: warn
     ~/.vimrc: vimrc
+    ~/.zshrc: zshrc
     ~/.countdown: countdown
     ~/.git-prompt.sh: git-prompt
     ~/.git-completion.bash: git-completion
@@ -22,3 +23,5 @@
     - [./bashmarks/bashmarks.sh, Installing Bashmarks...]
     - [./dynamicaliases/da.sh, Installing Dynamic Aliases...]
     - [./fonts/init.sh, Installing Hack Font...]
+    - [./zsh.sh, Installing oh-my-zsh...]
+    - [./zshmarks/zshmarks.sh, Installing zshmarks...]

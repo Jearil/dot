@@ -8,3 +8,6 @@
 	path = dotbot
 	url = https://github.com/anishathalye/dotbot
 	ignore = dirty
+[submodule "zshmarks/bookmarks"]
+	path = zshmarks/bookmarks
+	url = https://github.com/zpm-zsh/bookmarks.git
