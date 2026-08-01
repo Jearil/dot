@@ -1,4 +1,6 @@
-#/bin/bash
+#!/usr/bin/env bash
 
-cp -R bookmarks ~/.oh-my-zsh/custom/plugins/
+DIRECTORY=$(cd `dirname $0` && pwd)
+
+cp -R $DIRECTORY/bookmarks ~/.oh-my-zsh/custom/plugins/
 mkdir -p ~/.config/zsh
