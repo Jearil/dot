@@ -38,16 +38,6 @@
       path: bin/*
       force: true
       exclude: [bin/__pycache__]
-    ~/.local/bin/:
-      if: '[ "$(hostname -s)" = glass ]'
-      glob: true
-      path: hosts/glass/localbin/*
-      force: true
-    ~/.config/systemd/user/:
-      if: '[ "$(hostname -s)" = glass ]'
-      glob: true
-      path: hosts/glass/systemd/*
-      force: true
 
 - link:
     ~/.tmux.os.conf:
