@@ -1,0 +1,28 @@
+#!/bin/zsh
+# Activate the crewai Python 3.13 virtual environment.
+# Source this script to activate in your current shell:
+#   source crewenv  (or ". crewenv")
+# Or run it directly to open a subshell with the venv active.
+
+VENV_ACTIVATE=~/venvs/crewai-env/bin/activate
+
+if [[ ! -f "$VENV_ACTIVATE" ]]; then
+    echo "Error: crewai venv not found at ~/venvs/crewai-env" >&2
+    echo "Create it with: python3.13 -m venv ~/venvs/crewai-env" >&2
+    return 1 2>/dev/null || exit 1
+fi
+
+if [[ "${ZSH_EVAL_CONTEXT}" == *:file* ]]; then
+    # Being sourced — activate in the current shell
+    source "$VENV_ACTIVATE"
+    echo "crewai environment activated."
+else
+    # Being executed — spawn a subshell with the venv active
+    echo "Entering crewai environment (subshell). Type 'exit' to leave."
+    _crew_tmpdir=$(mktemp -d)
+    printf '%s\n' \
+        '[[ -f ~/.zshrc ]] && source ~/.zshrc' \
+        "source $VENV_ACTIVATE" \
+        > "$_crew_tmpdir/.zshrc"
+    ZDOTDIR="$_crew_tmpdir" exec zsh
+fi

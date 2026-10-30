@@ -1,5 +1,7 @@
 " Get any work specific vim out of the way
-source ~/.vimrc_work
+if filereadable(expand("~/.vimrc_work"))
+  source ~/.vimrc_work
+endif
 
 syntax enable
 "let g:SuperTabDefaultCompletionType = "<c-x><c-u>"

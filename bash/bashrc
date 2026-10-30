@@ -1,0 +1,46 @@
+# Sourced from ~/.bashrc, which sets DOT_DIR. Machine-only lines belong in ~/.bashrc.
+. "$DOT_DIR/shell/env.sh"
+[[ $- == *i* ]] || return
+
+sourceIfExists() {
+    if [ -f "$1" ]; then
+        . "$1"
+    fi
+}
+
+sourceIfExists ~/.local/bin/bashmarks.sh
+sourceIfExists ~/.local/bin/dynamicaliases.sh
+sourceIfExists ~/.git-prompt.sh
+sourceIfExists ~/.git-completion.bash
+. "$DOT_DIR/shell/aliases.sh"
+. "$DOT_DIR/shell/functions.sh"
+
+# super cd ..
+# Add an additional . for each directory
+cd() { if [[ "$1" =~ ^\.\.+$ ]];then local a dir;a=${#1};while [ $a -ne 1 ];do dir=${dir}"../";((a--));done;builtin cd $dir;else builtin cd "$@";fi ;}
+
+# fix tmux term
+if [ "$TERM" == "screen" ]; then
+  export TERM=tmux-256color
+fi
+
+# make hg_ps1
+hg_ps1() {
+  local INFO
+  INFO=$(hg book -ql . 2> /dev/null)
+  if [ $? -eq 0 ]; then
+    echo -e "[$INFO]"
+  fi
+}
+
+# Prompt
+export PS1="\n \[\033[0;34m\]╭─\[\033[0;31m\]\[\033[0;37m\]\[\033[41m\] \u \[\033[0m\]\[\033[0;31m\]\[\033[44m\]\[\033[0;34m\]\[\033[44m\]\[\033[0;30m\]\[\033[44m\] \w \[\033[0m\]\[\033[0;34m\]\$(__git_ps1)\$(hg_ps1) \n \[\033[0;34m\]╰ \[\033[1;36m\]\$ \[\033[0m\]"
+
+# Man pages
+export LESS_TERMCAP_mb=$'\e[1;32m'
+export LESS_TERMCAP_md=$'\e[1;32m'
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_se=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[01;33m'
+export LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[1;4;31m'

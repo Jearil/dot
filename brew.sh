@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 
-if ! which brew > /dev/null; then
-  ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+set -e
+
+if ! command -v brew > /dev/null; then
+  for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$brew" ] && eval "$("$brew" shellenv)"
+  done
 fi
 
-# Make sure we’re using the latest Homebrew.
+if ! command -v brew > /dev/null; then
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$brew" ] && eval "$("$brew" shellenv)"
+  done
+fi
+
 brew update
-
-# Upgrade any installed formulae.
-brew upgrade --all
-
-# Necessities
-brew install git
-
-# Cleanup
-brew cleanup
-brew prune
+brew bundle --file "$(dirname "$0")/packages/Brewfile"

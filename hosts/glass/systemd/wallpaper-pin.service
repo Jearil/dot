@@ -1,0 +1,14 @@
+[Unit]
+Description=Pin wallpapers to physical displays (connector-stable)
+Documentation=https://github.com/local/steam-center-sound
+PartOf=plasma-workspace.target
+After=plasma-workspace.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/wallpaper-pin
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=plasma-workspace.target

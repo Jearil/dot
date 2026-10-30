@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Inject text/keystrokes into the C64 via the keyboard buffer."""
+
+import sys
+from c64lib import C64, base_parser, load_config, text_to_petscii
+
+
+def main():
+    p = base_parser('Inject text/keystrokes into the C64 via the keyboard buffer')
+    p.add_argument('text', nargs='*', help='Text to send (joined with spaces)')
+    p.add_argument('-f', '--file', metavar='FILE', help='Read text from file instead of args')
+    p.add_argument('--no-return', action='store_true', help="Don't append RETURN at end")
+    args = p.parse_args()
+
+    # Determine text source: pipe > --file > positional args
+    # Only treat stdin as a source when it's not a tty AND no other inputs given
+    has_stdin = not sys.stdin.isatty() and not args.file and not args.text
+
+    if args.file and args.text:
+        print('Error: provide only one of: --file or positional args', file=sys.stderr)
+        sys.exit(1)
+
+    if has_stdin:
+        text = sys.stdin.read()
+    elif args.file:
+        try:
+            text = open(args.file).read()
+        except OSError as e:
+            print(f'Error reading {args.file}: {e}', file=sys.stderr)
+            sys.exit(1)
+    elif args.text:
+        text = ' '.join(args.text)
+    else:
+        p.print_help()
+        sys.exit(1)
+
+    # Convert to PETSCII
+    try:
+        data = text_to_petscii(text)
+    except ValueError as e:
+        print(f'Error: {e}', file=sys.stderr)
+        sys.exit(1)
+
+    if not args.no_return:
+        data += bytes([0x0D])
+
+    ip = load_config(args.ip)
+    c64 = C64(ip)
+
+    if not c64.alive():
+        print(f'Cannot reach C64 at {ip}', file=sys.stderr)
+        sys.exit(1)
+
+    c64.send_petscii(data)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""
+ai_fix_ext — detect true file type via `file` and rename files with wrong extensions.
+
+Usage:
+    ai_fix_ext [-r] <path> [<path> ...]
+
+Paths can be files, directories, or shell-expanded globs.
+Directories are non-recursive by default; use -r to walk recursively.
+"""
+import argparse
+import os
+import subprocess
+import sys
+
+MIME_TO_EXT = {
+    "image/jpeg":             ".jpg",
+    "image/png":              ".png",
+    "image/gif":              ".gif",
+    "image/webp":             ".webp",
+    "image/bmp":              ".bmp",
+    "image/tiff":             ".tif",
+    "image/svg+xml":          ".svg",
+    "application/pdf":        ".pdf",
+    "application/zip":        ".zip",
+    "application/gzip":       ".gz",
+    "application/x-bzip2":    ".bz2",
+    "application/x-xz":       ".xz",
+    "application/x-tar":      ".tar",
+    "video/mp4":              ".mp4",
+    "video/x-msvideo":        ".avi",
+    "video/quicktime":        ".mov",
+    "video/x-matroska":       ".mkv",
+    "audio/mpeg":             ".mp3",
+    "audio/x-wav":            ".wav",
+    "audio/flac":             ".flac",
+    "audio/ogg":              ".ogg",
+}
+
+
+def detect_mime(path):
+    result = subprocess.run(
+        ["file", "--mime-type", "-b", path],
+        capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def collect_files(paths, recursive):
+    files = []
+    for p in paths:
+        if os.path.isdir(p):
+            if recursive:
+                for dirpath, _, filenames in os.walk(p):
+                    for name in sorted(filenames):
+                        files.append(os.path.join(dirpath, name))
+            else:
+                for name in sorted(os.listdir(p)):
+                    full = os.path.join(p, name)
+                    if os.path.isfile(full):
+                        files.append(full)
+        elif os.path.isfile(p):
+            files.append(p)
+        else:
+            print(f"Warning: path not found or not a file/directory: {p}", file=sys.stderr)
+    return files
+
+
+def collision_safe_path(directory, basename):
+    dest = os.path.join(directory, basename)
+    if not os.path.exists(dest):
+        return dest
+    base, ext = os.path.splitext(basename)
+    counter = 1
+    while True:
+        candidate = os.path.join(directory, f"{base}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Fix file extensions based on true MIME type."
+    )
+    parser.add_argument("paths", nargs="+", help="Files, directories, or glob-expanded paths")
+    parser.add_argument("-r", "--recursive", action="store_true",
+                        help="Recurse into subdirectories")
+    args = parser.parse_args()
+
+    files = collect_files(args.paths, args.recursive)
+
+    renamed = 0
+    skipped = 0
+
+    for path in files:
+        try:
+            mime = detect_mime(path)
+        except subprocess.CalledProcessError as e:
+            print(f"Error: could not detect MIME type for {path}: {e}", file=sys.stderr)
+            skipped += 1
+            continue
+
+        true_ext = MIME_TO_EXT.get(mime)
+        if true_ext is None:
+            skipped += 1
+            continue
+
+        current_ext = os.path.splitext(path)[1].lower()
+        if current_ext == true_ext:
+            skipped += 1
+            continue
+
+        directory = os.path.dirname(os.path.abspath(path))
+        base = os.path.splitext(os.path.basename(path))[0]
+        new_path = collision_safe_path(directory, base + true_ext)
+
+        try:
+            os.rename(path, new_path)
+        except OSError as e:
+            print(f"Error: could not rename {path}: {e}", file=sys.stderr)
+            skipped += 1
+            continue
+
+        print(f"{path} -> {new_path}")
+        renamed += 1
+
+    print(f"Done: {renamed} renamed, {skipped} skipped.")
+
+
+if __name__ == "__main__":
+    main()

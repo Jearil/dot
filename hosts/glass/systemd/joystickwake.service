@@ -1,0 +1,18 @@
+[Unit]
+Description=joystickwake — wake the display on game controller activity
+Documentation=https://github.com/foresto/joystickwake
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# KDE waker keys off this; the user session exports it, set explicitly to be safe.
+Environment=XDG_CURRENT_DESKTOP=KDE
+# kscreen-doctor (custom waker) needs the Wayland socket to re-power the panel.
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStart=%h/.local/share/joystickwake/venv/bin/python %h/.local/share/joystickwake/joystickwake --loglevel info --command "kscreen-doctor --dpms on"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

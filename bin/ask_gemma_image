@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import argparse, base64, requests
+
+DEFAULT_MODEL = "gemma-3-27b-id-abliterated"
+
+parser = argparse.ArgumentParser(description="Send an image + prompt to a local LMStudio model.")
+parser.add_argument("image_path")
+parser.add_argument("prompt")
+parser.add_argument("-m", "--model", default=DEFAULT_MODEL,
+                    help=f"Model to use (default: {DEFAULT_MODEL})")
+args = parser.parse_args()
+
+image_path, prompt = args.image_path, args.prompt
+
+# Detect mime type from extension
+ext = image_path.rsplit(".", 1)[-1].lower()
+mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+
+with open(image_path, "rb") as f:
+    image_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+payload = {
+    "model": args.model,
+    "messages": [{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+            {"type": "text", "text": prompt}
+        ]
+    }],
+    "max_tokens": 500
+}
+
+resp = requests.post("http://localhost:1234/v1/chat/completions", json=payload)
+resp.raise_for_status()
+print(resp.json()["choices"][0]["message"]["content"])

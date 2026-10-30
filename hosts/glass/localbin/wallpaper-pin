@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+# wallpaper-pin — keep each KDE wallpaper stuck to the *physical* display it was
+# set on, surviving boots and tvon/tvoff.
+#
+# Why: KDE binds a desktop's wallpaper to a numeric screen index, and this box's
+# layout changes constantly (the TV HDMI-A-2 is enabled late at boot, and
+# tvon/tvoff toggle it / reorder priorities), so Plasma reshuffles index->monitor
+# and the wallpapers land on the wrong screens. We persist a connector->image map
+# and re-apply it on boot and whenever the layout changes.
+#
+# Desired state is captured ONLY by an explicit `wallpaper-pin save` — the daemon
+# never auto-records. This is deliberate: a wallpaper that differs from what we
+# remembered is indistinguishable from KDE having shuffled the wrong image onto a
+# display via index reordering (especially at boot, where the wrong wallpaper is
+# already on screen before the daemon starts). So the daemon only ever *restores*;
+# you tell it the truth with `save` after you intentionally change a wallpaper.
+#
+# Layout change is detected from the connector->screen-index signature, NOT just
+# the set of connected connectors: a pure priority reorder keeps the same set but
+# permutes the indexes, which still shuffles the wallpapers. Watching the full
+# mapping catches both cases (and a set change is just one kind of signature change).
+#
+# Subcommands:
+#   wallpaper-pin            daemon: pin/restore the saved map (boot + layout change)
+#   wallpaper-pin save       record current on-screen wallpapers as the desired map
+#   wallpaper-pin status     print saved map vs. current on-screen map
+#   wallpaper-pin apply      force-apply the saved map once now
+#
+# Pure stdlib. Talks to the Plasma shell via:
+#   qdbus-qt6 org.kde.plasmashell /PlasmaShell \
+#       org.kde.PlasmaShell.evaluateScript '<js>'
+# Output from the script is read via print(); return values are NOT captured, so
+# every script prints a single newline-joined, tab-delimited blob.
+#
+# No root. Editable knobs (connectors, timings, paths) are right below.
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+# Connectors for this cabling (stable per CLAUDE.md; update here if cables move).
+#   HDMI-A-2 Samsung TV | DP-4 Ultrawide | DP-5 Razer | DP-3 Vertical Dell
+CONNECTORS = ["HDMI-A-2", "DP-3", "DP-4", "DP-5"]
+
+STATE_FILE = os.path.expanduser("~/.local/state/wallpaper-by-connector.json")
+
+TICK = 3.0          # poll interval, seconds
+SETTLE = 3.0        # wait after a layout change before re-applying (let containments appear)
+
+# qdbus binary (qt6 preferred), discovered like the repo's bash scripts.
+QDBUS = (shutil.which("qdbus-qt6") or shutil.which("qdbus6")
+         or shutil.which("qdbus"))
+
+
+def log(msg):
+    print(f"[wallpaper-pin] {msg}", flush=True)
+
+
+def _eval(js, timeout=15):
+    """Run a Plasma shell script, return its printed stdout (or None on failure)."""
+    if not QDBUS:
+        return None
+    try:
+        r = subprocess.run(
+            [QDBUS, "org.kde.plasmashell", "/PlasmaShell",
+             "org.kde.PlasmaShell.evaluateScript", js],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log(f"evaluateScript failed: {e}")
+        return None
+    if r.returncode != 0:
+        # Plasma not up yet, or a transient DBus hiccup.
+        return None
+    return r.stdout
+
+
+_READ_JS = """
+var conns = %s;
+var ds = desktops();
+var out = [];
+for (var i = 0; i < conns.length; i++) {
+    var c = conns[i];
+    var s = screenForConnector(c);
+    if (s < 0) continue;
+    for (var j = 0; j < ds.length; j++) {
+        var d = ds[j];
+        if (d.screen !== s) continue;
+        d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
+        out.push(c + "\\t" + s + "\\t" + d.readConfig("Image"));
+        break;
+    }
+}
+print(out.join("\\n"));
+""" % json.dumps(CONNECTORS)
+
+
+def read_state():
+    """Read the live layout for currently-present connectors in one shell call.
+
+    Returns (sig, images):
+      sig    = {connector: screen_index}  -- the layout signature
+      images = {connector: image}         -- current wallpaper per connector
+    Returns (None, None) if the shell was unreachable (don't treat as 'no monitors').
+    """
+    out = _eval(_READ_JS)
+    if out is None:
+        return None, None
+    sig, images = {}, {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        conn, idx, img = parts
+        sig[conn] = idx
+        img = img.strip()
+        if img:  # skip unconfigured / non-image-plugin desktops
+            images[conn] = img
+    return sig, images
+
+
+def apply_map(want):
+    """Re-apply saved images to their connectors' current screens (only if different).
+
+    Returns the list of connectors actually changed, or None on shell failure.
+    """
+    present = {c: img for c, img in want.items() if img}
+    if not present:
+        return []
+    js = """
+var want = %s;
+var changed = [];
+var ds = desktops();
+for (var c in want) {
+    var s = screenForConnector(c);
+    if (s < 0) continue;
+    for (var j = 0; j < ds.length; j++) {
+        var d = ds[j];
+        if (d.screen !== s) continue;
+        d.currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
+        if (d.readConfig("Image") !== want[c]) {
+            d.writeConfig("Image", want[c]);
+            d.reloadConfig();
+            changed.push(c);
+        }
+    }
+}
+print(changed.join("\\n"));
+""" % json.dumps(present)
+    out = _eval(js)
+    if out is None:
+        return None
+    return [c for c in out.splitlines() if c.strip()]
+
+
+def load_state():
+    try:
+        with open(STATE_FILE) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def save_state(saved):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    tmp = STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(saved, f, indent=2, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, STATE_FILE)
+
+
+def _wait_for_plasma():
+    """Block until the Plasma shell answers, returning (sig, cur)."""
+    sig = None
+    while sig is None:
+        sig, cur = read_state()
+        if sig is None:
+            time.sleep(TICK)
+    return sig, cur
+
+
+def cmd_save():
+    """Record current on-screen wallpapers as the desired map (the only writer)."""
+    if not QDBUS:
+        log("no qdbus binary found (need qdbus-qt6/qdbus6/qdbus).")
+        return 1
+    _, cur = read_state()
+    if cur is None:
+        log("Plasma shell unreachable; cannot read current wallpapers.")
+        return 1
+    # Only touch connectors present right now; keep entries for absent ones (e.g.
+    # the TV when it's off). To (re)set the TV's wallpaper, run `save` with it on.
+    saved = load_state() or {}
+    for c, img in cur.items():
+        saved[c] = img
+    save_state(saved)
+    log(f"recorded {sorted(cur)}; saved map now covers {sorted(saved)}")
+    return 0
+
+
+def cmd_status():
+    """Print the saved map vs. what's currently on screen."""
+    saved = load_state() or {}
+    _, cur = read_state()
+    cur = cur or {}
+    conns = sorted(set(saved) | set(cur))
+    if not conns:
+        log("no saved or current wallpapers (Plasma reachable?)")
+        return 0
+    print(f"{'connector':10}  {'on-screen == saved':18}  image")
+    for c in conns:
+        s, n = saved.get(c), cur.get(c)
+        mark = "—" if c not in cur else ("ok" if s == n else "DIFFERS")
+        print(f"{c:10}  {mark:18}  {n or saved.get(c) or ''}")
+    return 0
+
+
+def cmd_apply():
+    """Force-apply the saved map once now."""
+    if not QDBUS:
+        log("no qdbus binary found (need qdbus-qt6/qdbus6/qdbus).")
+        return 1
+    saved = load_state()
+    if not saved:
+        log("no saved state to apply (run `wallpaper-pin save` first).")
+        return 1
+    changed = apply_map(saved)
+    if changed is None:
+        log("Plasma shell unreachable; nothing applied.")
+        return 1
+    log(f"applied saved map; changed {changed or 'nothing'}")
+    return 0
+
+
+def main():
+    """Daemon: pin/restore the saved map on boot and on every layout change.
+
+    Never auto-saves — desired state is captured only by `wallpaper-pin save`.
+    """
+    if not QDBUS:
+        log("no qdbus binary found (need qdbus-qt6/qdbus6/qdbus); exiting.")
+        return 1
+
+    sig_prev, cur = _wait_for_plasma()
+
+    saved = load_state()
+    if saved is None:
+        # First-ever run: seed a starting baseline from the current layout so the
+        # user has something to edit. After this, only `save` mutates state.
+        save_state(dict(cur))
+        log(f"seeded state from current layout: {sorted(cur)}")
+
+    # Pin on boot: KDE may have shuffled wallpapers onto the wrong screens before we
+    # got here, so trust the saved map, not what's currently on screen.
+    time.sleep(SETTLE)  # let desktop containments appear
+    changed = apply_map(load_state() or {})
+    if changed:
+        log(f"applied saved map on boot; changed {changed}")
+    sig, _ = read_state()
+    if sig is not None:
+        sig_prev = sig  # else keep the pre-apply sig from _wait_for_plasma
+    log(f"watching layout {sig_prev} (tick={TICK}s)")
+
+    while True:
+        time.sleep(TICK)
+        sig, _ = read_state()
+        if sig is None:
+            continue  # shell unreachable; try again next tick without losing state
+
+        if sig != sig_prev:
+            # Layout changed: connector added/removed (boot, tvon/tvoff) OR a pure
+            # priority reorder permuting the indexes -> re-pin the saved map.
+            log(f"layout change: {sig_prev} -> {sig}; restoring")
+            time.sleep(SETTLE)  # let the new desktop containments settle
+            changed = apply_map(load_state() or {})  # reload so `save` edits apply
+            if changed:
+                log(f"restored wallpapers on: {changed}")
+            sig_after, _ = read_state()
+            sig_prev = sig_after if sig_after is not None else sig
+
+
+DISPATCH = {"save": cmd_save, "status": cmd_status, "apply": cmd_apply}
+
+
+if __name__ == "__main__":
+    try:
+        arg = sys.argv[1] if len(sys.argv) > 1 else None
+        if arg in DISPATCH:
+            sys.exit(DISPATCH[arg]())
+        if arg in (None, "daemon", "watch"):
+            sys.exit(main())
+        log(f"unknown command {arg!r}; use: save | status | apply | (none=daemon)")
+        sys.exit(2)
+    except KeyboardInterrupt:
+        pass

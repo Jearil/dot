@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Upload files to the C64 Ultimate filesystem."""
+
+import sys
+from pathlib import Path
+from c64lib import C64, base_parser, load_config, text_to_petscii
+
+TEXT_EXTENSIONS = {'.txt', '.bas'}
+
+
+def main():
+    p = base_parser('Upload files to the C64 Ultimate filesystem')
+    p.add_argument('file', nargs='+', help='Local file(s) to upload')
+    p.add_argument(
+        '-l', '--location',
+        metavar='LOCATION',
+        default='temp',
+        help='Destination: "temp" (default) or absolute path like /USB0/mydir/',
+    )
+    args = p.parse_args()
+
+    ip = load_config(args.ip)
+    c64 = C64(ip)
+
+    if not c64.alive():
+        print(f'Cannot reach C64 at {ip}', file=sys.stderr)
+        sys.exit(1)
+
+    for filename in args.file:
+        local = Path(filename)
+        if not local.exists():
+            print(f'Error: file not found: {filename}', file=sys.stderr)
+            sys.exit(1)
+
+        raw = local.read_bytes()
+
+        # Apply PETSCII conversion for text files
+        if local.suffix.lower() in TEXT_EXTENSIONS:
+            try:
+                data = text_to_petscii(local.read_text())
+            except ValueError as e:
+                print(f'Error in {filename}: {e}', file=sys.stderr)
+                sys.exit(1)
+        else:
+            data = raw
+
+        if args.location == 'temp':
+            dest = '/TEMP/ (via run_prg)'
+            print(f'Uploading {local.name} ({len(data)} bytes) → {dest} ... ', end='', flush=True)
+            try:
+                result = c64.load_prg(data)
+                if result.get('errors'):
+                    print(f'FAILED: {result["errors"]}')
+                    sys.exit(1)
+                print('done.')
+            except Exception as e:
+                print(f'FAILED: {e}', file=sys.stderr)
+                sys.exit(1)
+        else:
+            # FTP upload — ensure location ends with /
+            location = args.location.rstrip('/') + '/'
+            remote_path = location + local.name
+            print(
+                f'Uploading {local.name} ({len(data)} bytes) → {remote_path} ... ',
+                end='', flush=True,
+            )
+            try:
+                c64.ftp_upload(data, remote_path)
+                print('done.')
+            except Exception as e:
+                print(f'FAILED: {e}', file=sys.stderr)
+                sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

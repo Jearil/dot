@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Removes the kernel-7.x dnf exclusion added on 2026-05-15 to work around the
+# kernel 7.0 + NVIDIA RTX 5000 + XWayland DXVK regression. Run this when the
+# upstream fix lands (check Fedora kernel changelog and NVIDIA driver release
+# notes first), then run `dnf upgrade` to pull a fixed 7.x kernel.
+
+set -euo pipefail
+
+DNF_CONF=/etc/dnf/dnf.conf
+BACKUP="${DNF_CONF}.bak.$(date +%Y%m%d-%H%M%S)"
+
+if [[ $EUID -ne 0 ]]; then
+  exec sudo "$0" "$@"
+fi
+
+if ! grep -q '^excludepkgs=kernel-7\.\*' "$DNF_CONF"; then
+  echo "No kernel-7.x exclusion found in $DNF_CONF. Nothing to do."
+  exit 0
+fi
+
+cp "$DNF_CONF" "$BACKUP"
+echo "Backed up $DNF_CONF -> $BACKUP"
+
+# Remove the excludepkgs line and its indented continuation line.
+sed -i \
+  -e '/^excludepkgs=kernel-7\.\*/d' \
+  -e '/^[[:space:]]\+kernel-devel\*-7\.\*/d' \
+  "$DNF_CONF"
+
+echo "Removed kernel-7.x exclusion. Updated $DNF_CONF:"
+echo "----"
+cat "$DNF_CONF"
+echo "----"
+echo
+echo "Next steps:"
+echo "  1. dnf upgrade                              # pull the new 7.x kernel"
+echo "  2. grubby --set-default /boot/vmlinuz-<new> # optional: pick the new kernel as default"
+echo "  3. reboot                                   # boot into the new kernel"
+echo
+echo "If anything goes wrong, restore with: cp $BACKUP $DNF_CONF"

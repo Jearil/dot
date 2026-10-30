@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Manually set the default audio output: tv | main/razer | yeti | blackshark/headset.
+# Thin wrapper around the installed change_speakers.py (which reuses audio_router).
+exec python3 "$HOME/.local/share/steam-center-sound/change_speakers.py" "$@"

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Reset the C64."""
+
+import sys
+from c64lib import C64, base_parser, load_config
+
+
+def main():
+    p = base_parser('Reset the C64')
+    args = p.parse_args()
+
+    ip = load_config(args.ip)
+    c64 = C64(ip)
+
+    try:
+        c64.reset()
+    except Exception as e:
+        print(f'Error: {e}', file=sys.stderr)
+        sys.exit(1)
+    print('Reset.')
+
+
+if __name__ == '__main__':
+    main()

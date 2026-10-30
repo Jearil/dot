@@ -1,24 +1,67 @@
-- clean: 
+- defaults:
+    link:
+      create: true
+      relink: true
+    shell:
+      stdout: true
+      stderr: true
+
+- clean:
     ~/:
-        force: true
+      recursive: false
+
+- shell:
+    - [./bootstrap/preflight.sh, Checking required tools...]
+    - [./bootstrap/stubs.sh, Updating shell stubs...]
+
 - link:
-    ~/.bash_profile: bash_profile
-    ~/.bashrc: bashrc
-    ~/.bash_aliases: bash_aliases
-    ~/.warn: warn
     ~/.vimrc: vimrc
-    ~/.zshrc: zshrc
-    ~/.countdown: countdown
     ~/.git-prompt.sh: git-prompt
     ~/.git-completion.bash: git-completion
-    ~/.utils.sh: utils.sh
-    ~/.tmux.conf: tmux
+    ~/.tmux.conf: tmux/common.conf
     ~/.hgrc: hgrc
+    ~/.local/bin/dot: dot
+    ~/.gitconfig:
+      path: config/git/gitconfig
+      force: true
+    ~/.config/git/ignore:
+      path: config/git/ignore
+      force: true
+    ~/.config/jj/config.toml:
+      path: config/jj/config.toml
+      force: true
+    ~/.config/ghostty/config:
+      path: config/ghostty/config
+      force: true
+    ~/bin/:
+      glob: true
+      path: bin/*
+      force: true
+      exclude: [bin/__pycache__]
+    ~/.local/bin/:
+      if: '[ "$(hostname -s)" = glass ]'
+      glob: true
+      path: hosts/glass/localbin/*
+      force: true
+    ~/.config/systemd/user/:
+      if: '[ "$(hostname -s)" = glass ]'
+      glob: true
+      path: hosts/glass/systemd/*
+      force: true
+
+- link:
+    ~/.tmux.os.conf:
+      if: '[ "$(uname)" = Linux ]'
+      path: tmux/linux.conf
+
+- link:
+    ~/.tmux.os.conf:
+      if: '[ "$(uname)" = Darwin ]'
+      path: tmux/darwin.conf
 
 - shell:
     - [git submodule update --init --recursive, Installing submodules...]
-    - [./hg-prompt.sh, Downloading hg-prompt...]
-    - [./osx.sh, Updating OS X preferences...]
+    - [./bootstrap/seed.sh, Seeding app configs...]
     - [./vim/install.sh, Setting up vim...]
     - [./bashmarks/bashmarks.sh, Installing Bashmarks...]
     - [./dynamicaliases/da.sh, Installing Dynamic Aliases...]

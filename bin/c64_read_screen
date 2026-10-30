@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Read and print the C64 screen via the REST API."""
+
+import sys
+from c64lib import C64, base_parser, load_config, sc_to_char
+
+
+def main():
+    p = base_parser('Read and print the C64 screen')
+    p.add_argument('--all', action='store_true', help='Include blank rows (default: skip)')
+    p.add_argument('--raw', action='store_true', help='Hex dump of screen codes instead of text')
+    args = p.parse_args()
+
+    ip = load_config(args.ip)
+    c64 = C64(ip)
+
+    if not c64.alive():
+        print(f'Cannot reach C64 at {ip}', file=sys.stderr)
+        sys.exit(1)
+
+    for i in range(25):
+        addr = c64.SCREEN_RAM + i * 40
+        data = c64.readmem(addr, 40)
+
+        if args.raw:
+            is_blank = all(b == 0x20 for b in data)
+            if args.all or not is_blank:
+                hex_str = ' '.join(f'{b:02X}' for b in data)
+                print(f'row {i:02d}: {hex_str}')
+        else:
+            row = ''.join(sc_to_char(b) for b in data).rstrip()
+            if args.all or row:
+                print(row)
+
+
+if __name__ == '__main__':
+    main()

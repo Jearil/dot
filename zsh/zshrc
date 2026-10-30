@@ -1,0 +1,23 @@
+# Sourced from the ~/.zshrc stub, which sets DOT_DIR. Machine-only lines belong in ~/.zshrc.
+typeset -U path
+
+. "$DOT_DIR/shell/env.sh"
+
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="agnoster"
+plugins=(git colorize bookmarks)
+source $ZSH/oh-my-zsh.sh
+
+. "$DOT_DIR/shell/aliases.sh"
+. "$DOT_DIR/shell/functions.sh"
+
+# Bashmarks
+alias g="c"
+alias s="mark"
+alias d="delmark"
+alias p="marks"
+alias l="marks"
+
+# SDKMAN wants to load last
+export SDKMAN_DIR="$HOME/.sdkman"
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"

@@ -1,0 +1,35 @@
+#!/bin/bash
+
+LMSTUDIO_URL="http://localhost:1234"
+DEFAULT_MODEL="qwen/qwen3.6-27b"
+
+LIST_MODELS=false
+CLAUDE_ARGS=()
+
+for arg in "$@"; do
+    if [[ "$arg" == "-l" || "$arg" == "--list-models" ]]; then
+        LIST_MODELS=true
+    else
+        CLAUDE_ARGS+=("$arg")
+    fi
+done
+
+if [[ "$LIST_MODELS" == "true" ]]; then
+    mapfile -t MODELS < <(curl -s "$LMSTUDIO_URL/v1/models" | jq -r '.data[].id' 2>/dev/null)
+    if [[ ${#MODELS[@]} -eq 0 ]]; then
+        echo "Error: Could not fetch models from $LMSTUDIO_URL" >&2
+        exit 1
+    fi
+    echo "Select a model:"
+    select MODEL in "${MODELS[@]}"; do
+        [[ -n "$MODEL" ]] && break
+    done
+    SELECTED_MODEL="$MODEL"
+else
+    SELECTED_MODEL="$DEFAULT_MODEL"
+fi
+
+ANTHROPIC_AUTH_TOKEN="lmstudio" \
+ANTHROPIC_API_KEY="" \
+ANTHROPIC_BASE_URL="$LMSTUDIO_URL" \
+    claude --model "$SELECTED_MODEL" "${CLAUDE_ARGS[@]}"

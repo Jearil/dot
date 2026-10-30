@@ -1,0 +1,5 @@
+#!/bin/bash
+stdbuf -o0 "$HOME/bin/tcpser" -v 25232 -s 38400 -l 4 2>&1 | sed 's/.*/\x1b[0;32m&\x1b[0m/' &
+tcpser_pid=$!
+x64sc
+kill $tcpser_pid

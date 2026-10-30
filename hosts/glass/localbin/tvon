@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Enable the Samsung TV and prioritize it. Priority: TV > Ultrawide > Razer > Vertical.
+# Also pins the monitor arrangement (TV left of Razer) and, if Steam Big Picture is
+# running, moves it onto the TV.
+set -euo pipefail
+
+# Connectors for this cabling (stable per CLAUDE.md; update here if cables move).
+TV="HDMI-A-2"        # Samsung S90H        1920x1080
+ULTRAWIDE="DP-4"     # Dell AW3423DW       3440x1440
+RAZER="DP-5"         # Razer RZ39-0276     2560x1440
+VERTICAL="DP-3"      # Dell U2719DC        1440x2560 (rotated)
+
+# Arrangement with the TV on, left -> right (x flows; the horizontal row sits at
+# 655, the TV a bit lower at 823, against the taller vertical panel at 0). Set
+# explicitly so toggling the TV never lets KWin re-pack the layout and overlap the
+# screens.
+#   TV 0..1920 | Razer 1920..4480 | Ultrawide 4480..7920 | Vertical 7920..9360
+kscreen-doctor \
+    "output.$TV.enable" \
+    "output.$TV.position.0,823" \
+    "output.$RAZER.position.1920,655" \
+    "output.$ULTRAWIDE.position.4480,655" \
+    "output.$VERTICAL.position.7920,0" \
+    "output.$TV.priority.1" \
+    "output.$ULTRAWIDE.priority.2" \
+    "output.$RAZER.priority.3" \
+    "output.$VERTICAL.priority.4"
+
+printf '\033[1;34m==>\033[0m %s\n' "Samsung TV enabled. Priority: TV > Ultrawide > Razer > Vertical."
+
+# If Steam Big Picture is open, move it onto the TV (no-op otherwise). Done in the
+# compositor via a one-shot KWin script — a shell script can't move Wayland windows.
+MOVER="$HOME/.local/share/steam-center-sound/move_big_picture.js"
+QDBUS="$(command -v qdbus-qt6 || command -v qdbus6 || command -v qdbus || true)"
+if [ -n "$QDBUS" ] && [ -f "$MOVER" ]; then
+    sleep 1   # let KWin settle on the new screen layout before moving the window
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript scs-move-bp >/dev/null 2>&1 || true
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$MOVER" scs-move-bp >/dev/null 2>&1 || true
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1 || true
+fi

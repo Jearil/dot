@@ -7,3 +7,7 @@ if [ ! -d ~/.oh-my-zsh ]; then
     echo "Installing oh-my-zsh"
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
 fi
+
+if [ "$(basename "${SHELL:-}")" != "zsh" ]; then
+    echo "zsh is not your login shell. To change it, run: chsh -s $(command -v zsh)"
+fi

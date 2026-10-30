@@ -1,0 +1,7 @@
+# Installed on both legion and glass. Applied by: dot packages --flatpak
+com.bitwarden.desktop
+com.adamcake.Bolt
+com.heroicgameslauncher.hgl
+com.nvidia.geforcenow
+com.vysp3r.ProtonPlus
+net.runelite.RuneLite

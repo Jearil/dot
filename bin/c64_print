@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""Find and print printer files from the C64 Ultimate filesystem."""
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+
+from c64lib import C64, base_parser, load_config
+
+ROOTS = ['/SD', '/USB0', '/USB1']
+PRINTED_DIR = 'printed'
+PAGE_SIZE = 9
+
+
+# ── Job discovery ─────────────────────────────────────────────────────────────
+
+def discover_jobs(c64: C64) -> list:
+    """Scan ROOTS for printable files. Returns a list of job dicts."""
+    ftp = c64.ftp_connect()
+    jobs = []
+    for root in ROOTS:
+        files = c64.ftp_listdir(ftp, root)
+        if not files:
+            continue
+
+        if 'printer.txt' in files:
+            jobs.append({
+                'type': 'txt', 'root': root,
+                'files': ['printer.txt'],
+                'label': f'{root}/printer.txt',
+            })
+
+        if 'printer.png' in files:
+            jobs.append({
+                'type': 'png', 'root': root,
+                'files': ['printer.png'],
+                'label': f'{root}/printer.png',
+            })
+
+        pages = sorted(f for f in files if re.match(r'^printer-\d+\.png$', f))
+        if pages:
+            n = len(pages)
+            jobs.append({
+                'type': 'png', 'root': root,
+                'files': pages,
+                'label': f'{root}/printer-*.png  ({n} page{"s" if n != 1 else ""})',
+            })
+
+    ftp.quit()
+    return jobs
+
+
+def discover_archived_jobs(c64: C64) -> list:
+    """Scan printed/ subdirectories for previously printed jobs."""
+    ftp = c64.ftp_connect()
+    jobs = []
+    for root in ROOTS:
+        printed_path = f'{root}/{PRINTED_DIR}'
+        files = c64.ftp_listdir(ftp, printed_path)
+        if not files:
+            continue
+
+        png_groups: dict = {}
+        for f in files:
+            m = re.match(r'^printer-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})(-\d+)?\.png$', f)
+            if m:
+                png_groups.setdefault(m.group(1), []).append(f)
+
+        for ts, pages in sorted(png_groups.items()):
+            pages = sorted(pages)
+            n = len(pages)
+            jobs.append({
+                'type': 'png', 'root': printed_path,
+                'files': pages,
+                'label': f'{printed_path}/printer-{ts}  ({n} page{"s" if n != 1 else ""})',
+                'archived': True,
+            })
+
+        for f in sorted(files):
+            if re.match(r'^printer-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.txt$', f):
+                jobs.append({
+                    'type': 'txt', 'root': printed_path,
+                    'files': [f],
+                    'label': f'{printed_path}/{f}',
+                    'archived': True,
+                })
+
+    ftp.quit()
+    return jobs
+
+
+# ── Download ──────────────────────────────────────────────────────────────────
+
+def download_job(c64: C64, job: dict) -> list:
+    """Download all files for a job. Returns list of local temp paths."""
+    ftp = c64.ftp_connect()
+    local_paths = []
+    for filename in job['files']:
+        remote_path = f"{job['root']}/{filename}"
+        suffix = Path(filename).suffix.lower()
+        buf = BytesIO()
+        ftp.retrbinary(f'RETR {remote_path}', buf.write)
+        data = buf.getvalue()
+        if suffix == '.txt':
+            # C64 files use bare CR as line endings; normalise to LF
+            data = data.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp.write(data)
+        tmp.close()
+        local_paths.append(tmp.name)
+    ftp.quit()
+    return local_paths
+
+
+# ── Archive ───────────────────────────────────────────────────────────────────
+
+def archive_job(c64: C64, job: dict):
+    """Move job files into printed/ with a timestamp-based name."""
+    ftp = c64.ftp_connect()
+    printed_path = f"{job['root']}/{PRINTED_DIR}"
+    c64.ftp_ensure_dir(ftp, printed_path)
+    stamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+
+    for filename in job['files']:
+        src = f"{job['root']}/{filename}"
+        if job['type'] == 'txt':
+            dst = f'{printed_path}/printer-{stamp}.txt'
+        else:
+            m = re.match(r'^printer(-\d+)?\.png$', filename)
+            page_suffix = m.group(1) if m and m.group(1) else ''
+            dst = f'{printed_path}/printer-{stamp}{page_suffix}.png'
+        ftp.rename(src, dst)
+
+    ftp.quit()
+
+
+# ── Printer helpers ───────────────────────────────────────────────────────────
+
+def get_default_printer() -> str | None:
+    result = subprocess.run(['lpstat', '-d'], capture_output=True, text=True)
+    if result.returncode == 0 and 'destination:' in result.stdout:
+        name = result.stdout.strip().split('destination:', 1)[1].strip()
+        return name or None
+    return None
+
+
+def list_printers() -> list:
+    result = subprocess.run(['lpstat', '-a'], capture_output=True, text=True)
+    return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
+
+
+def resolve_printer(requested: str | None) -> str | None:
+    """Return printer name to use, prompting the user if there is no default."""
+    if requested:
+        return requested
+    if get_default_printer():
+        return None
+
+    printers = list_printers()
+    if not printers:
+        print('No printers available. Install a printer and try again.', file=sys.stderr)
+        sys.exit(1)
+    if len(printers) == 1:
+        print(f'No default printer set; using only available printer: {printers[0]}')
+        return printers[0]
+
+    print('\nNo default printer set. Available printers:')
+    for i, name in enumerate(printers, 1):
+        print(f'  {i}. {name}')
+    print()
+    try:
+        raw = input('Enter number to select printer (or q to quit): ').strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
+    if raw.lower() == 'q':
+        sys.exit(0)
+    try:
+        n = int(raw)
+        if 1 <= n <= len(printers):
+            return printers[n - 1]
+    except ValueError:
+        pass
+    print('Invalid selection.', file=sys.stderr)
+    sys.exit(1)
+
+
+# ── Paged menu ────────────────────────────────────────────────────────────────
+
+def paged_menu(jobs: list, title: str) -> dict | None:
+    """Show a paginated 1-9 / n / p / q menu. Returns selected job or None."""
+    total_pages = max(1, (len(jobs) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = 0
+
+    while True:
+        start = page * PAGE_SIZE
+        page_jobs = jobs[start:start + PAGE_SIZE]
+
+        print(f'\n{title}  (page {page + 1}/{total_pages}):')
+        for i, job in enumerate(page_jobs, 1):
+            print(f'  {i}. {job["label"]}')
+
+        hints = ['1-9: select']
+        if page < total_pages - 1:
+            hints.append('n: next')
+        if page > 0:
+            hints.append('p: prev')
+        hints.append('q: quit')
+
+        try:
+            raw = input(f'[{", ".join(hints)}]: ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+
+        if raw == 'q':
+            return None
+        if raw == 'n' and page < total_pages - 1:
+            page += 1
+            continue
+        if raw == 'p' and page > 0:
+            page -= 1
+            continue
+        try:
+            n = int(raw)
+            if 1 <= n <= len(page_jobs):
+                return page_jobs[n - 1]
+        except ValueError:
+            pass
+        print('Invalid input.')
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    p = base_parser('Find and print printer files from the C64 Ultimate filesystem')
+    p.add_argument('--printer', metavar='NAME', help='Printer name (default: system default)')
+    p.add_argument('--duplex', choices=['long', 'short'], default='long',
+                   metavar='EDGE', help='2-sided edge: long (portrait, default) or short (landscape)')
+    p.add_argument('--no-duplex', action='store_true', help='Disable 2-sided printing')
+    args = p.parse_args()
+
+    ip = load_config(args.ip)
+    c64 = C64(ip)
+    if not c64.alive():
+        print(f'Cannot reach C64 at {ip}', file=sys.stderr)
+        sys.exit(1)
+
+    print('Scanning for printer files...', end=' ', flush=True)
+    jobs = discover_jobs(c64)
+    print('done.')
+
+    archived = False
+    if not jobs:
+        print('No printer files found.')
+        try:
+            raw = input('Browse previously printed files? [y/N]: ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(0)
+        if raw != 'y':
+            sys.exit(0)
+        jobs = discover_archived_jobs(c64)
+        if not jobs:
+            print('No previously printed files found.')
+            sys.exit(0)
+        archived = True
+
+    job = paged_menu(jobs, 'Available printer files' if not archived else 'Previously printed files')
+    if job is None:
+        sys.exit(0)
+
+    print(f'\nDownloading {job["label"]} ... ', end='', flush=True)
+    try:
+        local_paths = download_job(c64, job)
+    except Exception as e:
+        print(f'FAILED: {e}', file=sys.stderr)
+        sys.exit(1)
+    print('done.')
+
+    # Merge multi-page PNG jobs into a single PDF so duplex spans all pages
+    pdf_path = None
+    if job['type'] == 'png' and len(local_paths) > 1:
+        try:
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            tf.close()
+            pdf_path = tf.name
+            result = subprocess.run(['magick'] + local_paths + [pdf_path],
+                                    capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or 'magick failed')
+        except Exception as e:
+            print(f'FAILED to merge pages into PDF: {e}', file=sys.stderr)
+            for path in local_paths:
+                os.unlink(path)
+            sys.exit(1)
+
+    print_paths = [pdf_path] if pdf_path else local_paths
+    printer = resolve_printer(args.printer)
+    duplex_mode = None if args.no_duplex else {'long': 'DuplexNoTumble', 'short': 'DuplexTumble'}[args.duplex]
+
+    cmd = ['lp']
+    if printer:
+        cmd += ['-d', printer]
+    if duplex_mode:
+        cmd += ['-o', f'Duplex={duplex_mode}']
+    cmd += print_paths
+
+    dest = f' to {printer}' if printer else ''
+    sided = ' (2-sided)' if duplex_mode else ''
+    pages_str = f' ({len(local_paths)} pages)' if len(local_paths) > 1 else ''
+    print(f'Printing{dest}{sided}{pages_str} ... ', end='', flush=True)
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or 'lp failed')
+        msg = result.stdout.strip()
+        print(f'done.{f" ({msg})" if msg else ""}')
+    except Exception as e:
+        print(f'FAILED: {e}', file=sys.stderr)
+        sys.exit(1)
+    finally:
+        for path in local_paths:
+            os.unlink(path)
+        if pdf_path:
+            os.unlink(pdf_path)
+
+    if not job.get('archived'):
+        print('Archiving ... ', end='', flush=True)
+        try:
+            archive_job(c64, job)
+            print('done.')
+        except Exception as e:
+            print(f'WARNING: could not archive files: {e}', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()

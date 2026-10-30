@@ -1,0 +1,22 @@
+# Core tools for every Fedora machine. Applied by: dot packages
+# jj and ghostty are not in the standard Fedora repos, so install those separately.
+zsh
+tmux
+vim-enhanced
+git
+git-lfs
+mercurial
+make
+curl
+python3
+gh
+fzf
+ripgrep
+fd-find
+bat
+btop
+jq
+meld
+lsd
+wl-clipboard
+libnotify

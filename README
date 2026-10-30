@@ -1,4 +1,41 @@
-Dot File
+Dot Files
 ===
 
-Basic config file for myself
+Shared config for my Fedora machines (legion, glass, teravangian) and my MacBook Air.
+
+Set up a machine:
+
+    git clone https://github.com/Jearil/dot.git ~/Projects/dot
+    cd ~/Projects/dot
+    ./install
+
+Everyday commands:
+
+    dot status               Show local changes and whether this machine is ahead or behind
+    dot sync                 Pull and re-run the install
+    dot packages             Install core packages (--flatpak adds the Flatpak list)
+    dot kde                  Apply shared KDE settings
+    dot macos                Apply macOS system preferences
+
+Where things go:
+
+    shell/, zsh/, bash/      Shared on every machine
+    os/, tmux/               Linux and macOS differences
+    hosts/<hostname>/        One machine only
+    ~/.zshrc, ~/.bashrc      Machine-local lines and installer additions, never in the repo
+    ~/.gitconfig.local       Machine-local git settings
+
+~/.zshrc and ~/.bashrc are real files with one "dot-managed" line that sources the repo.
+Installers can append to them without touching the repo.
+
+btop and Zed rewrite their own configs, so config/ only seeds them on machines that don't
+have them yet.
+
+Secrets never go in this repo, which is public. They live in ~/.secrets (mode 700) and are
+restored by hand from Bitwarden:
+
+    glass, legion(if needed), teravangian   anthropic.env, teravangian-mobile.env,
+                                            teravangian-mobile-keystore.env, twa-keystore.env
+    teravangian                             coppermind.env
+
+Don't put this repo in Syncthing, because it can corrupt .git.

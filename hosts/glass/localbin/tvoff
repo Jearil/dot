@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Disable the Samsung TV. Priority: Ultrawide > Razer > Vertical.
+# Also pins the remaining arrangement and, if Steam Big Picture is running, moves it
+# off the TV onto the ultrawide.
+set -euo pipefail
+
+# Connectors for this cabling (stable per CLAUDE.md; update here if cables move).
+TV="HDMI-A-2"        # Samsung S90H        1920x1080
+ULTRAWIDE="DP-4"     # Dell AW3423DW       3440x1440
+RAZER="DP-5"         # Razer RZ39-0276     2560x1440
+VERTICAL="DP-3"      # Dell U2719DC        1440x2560 (rotated)
+
+# Arrangement with the TV off, left -> right. Razer becomes leftmost; positions are
+# set explicitly (before disabling the TV) so the layout is deterministic.
+#   Razer 0..2560 | Ultrawide 2560..6000 | Vertical 6000..7440
+kscreen-doctor \
+    "output.$RAZER.position.0,655" \
+    "output.$ULTRAWIDE.position.2560,655" \
+    "output.$VERTICAL.position.6000,0" \
+    "output.$ULTRAWIDE.priority.1" \
+    "output.$RAZER.priority.2" \
+    "output.$VERTICAL.priority.3" \
+    "output.$TV.disable"
+
+printf '\033[1;34m==>\033[0m %s\n' "Samsung TV disabled. Priority: Ultrawide > Razer > Vertical."
+
+# If Steam Big Picture is open, move it off the TV onto the ultrawide (no-op
+# otherwise). Done in the compositor via a one-shot KWin script.
+MOVER="$HOME/.local/share/steam-center-sound/move_big_picture.js"
+QDBUS="$(command -v qdbus-qt6 || command -v qdbus6 || command -v qdbus || true)"
+if [ -n "$QDBUS" ] && [ -f "$MOVER" ]; then
+    sleep 1   # let KWin settle on the new screen layout before moving the window
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript scs-move-bp >/dev/null 2>&1 || true
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$MOVER" scs-move-bp >/dev/null 2>&1 || true
+    "$QDBUS" org.kde.KWin /Scripting org.kde.kwin.Scripting.start >/dev/null 2>&1 || true
+fi

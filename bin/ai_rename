@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""
+ai_rename — describe images with Gemma and copy them with descriptive filenames.
+
+Usage:
+    ai_rename [-d OUTPUT_DIR] <path> [<path> ...]
+
+Paths can be files, directories, or shell-expanded globs.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+import requests
+
+SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+LMSTUDIO_BASE = "http://localhost:1234"
+
+MIME_TO_EXT = {
+    "image/jpeg":          ".jpg",
+    "image/png":           ".png",
+    "image/gif":           ".gif",
+    "image/webp":          ".webp",
+    "image/bmp":           ".bmp",
+    "image/tiff":          ".tif",
+    "image/svg+xml":       ".svg",
+    "application/pdf":     ".pdf",
+    "application/zip":     ".zip",
+    "application/gzip":    ".gz",
+    "application/x-bzip2": ".bz2",
+    "application/x-xz":    ".xz",
+    "application/x-tar":   ".tar",
+    "video/mp4":           ".mp4",
+    "video/x-msvideo":     ".avi",
+    "video/quicktime":     ".mov",
+    "video/x-matroska":    ".mkv",
+    "audio/mpeg":          ".mp3",
+    "audio/x-wav":         ".wav",
+    "audio/flac":          ".flac",
+    "audio/ogg":           ".ogg",
+}
+LMSTUDIO_URL         = f"{LMSTUDIO_BASE}/v1/chat/completions"
+LMSTUDIO_MODELS_URL  = f"{LMSTUDIO_BASE}/api/v0/models"
+LMSTUDIO_LOAD_URL    = f"{LMSTUDIO_BASE}/api/v1/models/load"
+LMSTUDIO_UNLOAD_URL  = f"{LMSTUDIO_BASE}/api/v1/models/unload"
+CONFIG_DIR = os.path.expanduser("~/.local/share/ai_tools")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config")
+
+
+def load_config():
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    try:
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_config(config):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+def load_model(model_id):
+    """Load model_id in LMStudio. Raises on HTTP error."""
+    print(f"Loading model '{model_id}'... (this may take a moment)")
+    resp = requests.post(LMSTUDIO_LOAD_URL, json={"model": model_id}, timeout=300)
+    resp.raise_for_status()
+    print(f"Model loaded in {resp.json().get('load_time_seconds', '?'):.1f}s")
+
+
+def unload_model(model_id):
+    """Unload model_id from LMStudio. Raises on HTTP error."""
+    resp = requests.post(LMSTUDIO_UNLOAD_URL, json={"model": model_id}, timeout=60)
+    resp.raise_for_status()
+
+
+def get_loaded_model():
+    """Return the ID of the currently loaded model, or None if none is loaded."""
+    resp = requests.get(LMSTUDIO_MODELS_URL, timeout=10)
+    resp.raise_for_status()
+    for m in resp.json()["data"]:
+        if m.get("state") == "loaded":
+            return m["id"]
+    return None
+
+
+def prepare_model(model_id):
+    """Ensure model_id is loaded. Returns (was_loaded_by_us, displaced_model_id)."""
+    currently_loaded = get_loaded_model()
+    if currently_loaded == model_id:
+        return False, None
+
+    displaced = None
+    if currently_loaded is not None:
+        print(f"Unloading '{currently_loaded}' to free resources...")
+        unload_model(currently_loaded)
+        displaced = currently_loaded
+
+    load_model(model_id)
+    return True, displaced
+
+
+def cleanup_model(model_id, was_loaded_by_us, displaced_model_id):
+    """Restore LMStudio to pre-run state."""
+    if was_loaded_by_us:
+        try:
+            unload_model(model_id)
+            print(f"Unloaded '{model_id}' (loaded by us).")
+        except Exception as e:
+            print(f"Warning: could not unload '{model_id}': {e}")
+
+    if displaced_model_id:
+        try:
+            load_model(displaced_model_id)
+            print(f"Restored '{displaced_model_id}'.")
+        except Exception as e:
+            print(f"Warning: could not restore '{displaced_model_id}': {e}")
+
+
+def get_model():
+    model = load_config().get("model")
+    if not model:
+        print("No model configured. Run with -ms to select and save a model.")
+        sys.exit(1)
+    return model
+
+
+def is_vision_model(m):
+    """Return True if the model is a vision-language model (type='vlm')."""
+    return m.get("type") == "vlm"
+
+
+def select_model():
+    """Query LMStudio for all downloaded models, prompt user to select one,
+    load it if not already loaded, and return its ID."""
+    resp = requests.get(LMSTUDIO_MODELS_URL, timeout=10)
+    resp.raise_for_status()
+    all_models = resp.json()["data"]
+    models = [m for m in all_models if is_vision_model(m)]
+    if not models:
+        print("No vision-capable models found in LMStudio.")
+        sys.exit(1)
+
+    print("Available vision models:")
+    for i, m in enumerate(models, 1):
+        state = "loaded" if m["state"] == "loaded" else "not loaded"
+        print(f"  {i}. {m['id']}  [{state}]")
+
+    while True:
+        choice = input(f"Select model [1-{len(models)}]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(models):
+            selected = models[int(choice) - 1]
+            break
+        print("Invalid selection, try again.")
+
+    if selected["state"] != "loaded":
+        load_model(selected["id"])
+
+    save_config({**load_config(), "model": selected["id"]})
+    print(f"Model '{selected['id']}' saved as default.")
+    return selected["id"]
+
+def collect_files(paths):
+    files = []
+    for p in paths:
+        if os.path.isdir(p):
+            for name in sorted(os.listdir(p)):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in SUPPORTED_EXTS:
+                    files.append(os.path.join(p, name))
+        elif os.path.isfile(p):
+            ext = os.path.splitext(p)[1].lower()
+            if ext in SUPPORTED_EXTS:
+                files.append(p)
+            else:
+                print(f"Warning: skipping unsupported file type: {p}")
+        else:
+            print(f"Warning: path not found or not a file/directory: {p}")
+    return files
+
+
+def fix_extensions(files):
+    """Fix wrong file extensions in-place using MIME detection.
+    Returns an updated list of file paths (renamed paths where applicable)."""
+    updated = []
+    for path in files:
+        try:
+            result = subprocess.run(
+                ["file", "--mime-type", "-b", path],
+                capture_output=True, text=True, check=True
+            )
+            mime = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            updated.append(path)
+            continue
+
+        true_ext = MIME_TO_EXT.get(mime)
+        current_ext = os.path.splitext(path)[1].lower()
+        if true_ext is None or current_ext == true_ext:
+            updated.append(path)
+            continue
+
+        directory = os.path.dirname(os.path.abspath(path))
+        base = os.path.splitext(os.path.basename(path))[0]
+        new_path = collision_safe_path(directory, base + true_ext)
+        try:
+            os.rename(path, new_path)
+            print(f"  Fixed extension: {os.path.basename(path)} -> {os.path.basename(new_path)}")
+            updated.append(new_path)
+        except OSError as e:
+            print(f"  Warning: could not fix extension for {path}: {e}")
+            updated.append(path)
+    return updated
+
+
+def convert_webp_to_png(files):
+    """Convert WebP files to PNG in-place for better model compatibility.
+    Returns an updated list of file paths."""
+    updated = []
+    for path in files:
+        if os.path.splitext(path)[1].lower() != ".webp":
+            updated.append(path)
+            continue
+
+        directory = os.path.dirname(os.path.abspath(path))
+        base = os.path.splitext(os.path.basename(path))[0]
+        new_path = collision_safe_path(directory, base + ".png")
+        try:
+            subprocess.run(
+                ["convert", path, new_path],
+                capture_output=True, check=True
+            )
+            os.remove(path)
+            print(f"  Converted WebP: {os.path.basename(path)} -> {os.path.basename(new_path)}")
+            updated.append(new_path)
+        except subprocess.CalledProcessError as e:
+            print(f"  Warning: could not convert {path} to PNG: {e}")
+            updated.append(path)
+        except OSError as e:
+            print(f"  Warning: could not remove original WebP {path}: {e}")
+            updated.append(new_path)
+    return updated
+
+
+def collision_safe_path(output_dir, filename):
+    dest = os.path.join(output_dir, filename)
+    if not os.path.exists(dest):
+        return dest
+    base, ext = os.path.splitext(filename)
+    counter = 1
+    while True:
+        candidate = os.path.join(output_dir, f"{base}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
+def generate_filename(src_path, ext, model):
+    # Step 1: get image description
+    result = subprocess.run(
+        ["ask_gemma_image", "-m", model, src_path, "Please describe this image in detail."],
+        capture_output=True, text=True, check=True
+    )
+    description = result.stdout.strip()
+
+    # Step 2: ask Gemma (text-only) to produce a filename
+    prompt = (
+        f"Based on this image description, create a short filename "
+        f"(lowercase, underscores, no spaces, max 50 chars, end with {ext}). "
+        f"Return ONLY the filename, nothing else.\n\nDescription: {description}"
+    )
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 60,
+    }
+    resp = requests.post(LMSTUDIO_URL, json=payload, timeout=60)
+    resp.raise_for_status()
+    name = resp.json()["choices"][0]["message"]["content"].strip()
+    return name
+
+
+def sanitize(name):
+    return re.sub(r"[^\w.\-]", "_", name).lower()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Rename images using AI descriptions.")
+    parser.add_argument("paths", nargs="+", help="Files, directories, or glob-expanded paths")
+    parser.add_argument("-d", "--dir", default="./updated_names",
+                        help="Output directory (default: ./updated_names)")
+    parser.add_argument("-i", "--inline", action="store_true",
+                        help="Rename files in place instead of copying to output dir")
+    parser.add_argument("-ms", "--model-select", action="store_true",
+                        help="Interactively select model from LMStudio's available models")
+    args = parser.parse_args()
+
+    if args.model_select or not load_config().get("model"):
+        model = select_model()
+    else:
+        model = get_model()
+
+    # Orchestrate model load state
+    try:
+        was_loaded_by_us, displaced = prepare_model(model)
+    except requests.RequestException as e:
+        print(f"Error preparing model '{model}': {e}")
+        sys.exit(1)
+
+    try:
+        output_dir = args.dir
+        if not args.inline:
+            os.makedirs(output_dir, exist_ok=True)
+
+        files = collect_files(args.paths)
+
+        # Fix extensions before AI processing, then re-filter to supported types
+        files = fix_extensions(files)
+        files = [f for f in files if os.path.splitext(f)[1].lower() in SUPPORTED_EXTS]
+
+        # Convert WebP to PNG for better model compatibility
+        files = convert_webp_to_png(files)
+
+        total = len(files)
+        if total == 0:
+            print("No supported image files found.")
+            return
+
+        renamed = 0
+        skipped = 0
+        failed = 0
+
+        for i, src in enumerate(files, 1):
+            filename = os.path.basename(src)
+            print(f"[{i}/{total}] {filename}")
+            ext = os.path.splitext(filename)[1].lower()
+
+            try:
+                raw_name = generate_filename(src, ext, model)
+            except subprocess.CalledProcessError as e:
+                print(f"  Error running ask_gemma_image: {e}")
+                failed += 1
+                continue
+            except requests.RequestException as e:
+                print(f"  Error calling LMStudio API: {e}")
+                failed += 1
+                continue
+
+            name = sanitize(raw_name)
+            if not name or name in (".", ".."):
+                print(f"  Warning: generated name was empty or invalid, skipping.")
+                skipped += 1
+                continue
+
+            if args.inline:
+                src_dir = os.path.dirname(os.path.abspath(src))
+                dest = collision_safe_path(src_dir, name)
+                os.rename(src, dest)
+            else:
+                dest = collision_safe_path(output_dir, name)
+                shutil.copy2(src, dest)
+            print(f"  -> {os.path.basename(dest)}")
+            renamed += 1
+
+        print(f"\nDone: {renamed} renamed, {skipped} skipped, {failed} failed.")
+    finally:
+        cleanup_model(model, was_loaded_by_us, displaced)
+
+
+if __name__ == "__main__":
+    main()
