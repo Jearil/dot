@@ -12,7 +12,7 @@ backup="$HOME/.dot-backup-$(date +%F)"
 for file in .gitconfig .config/ghostty/config .config/jj/config.toml .config/git/ignore; do
     if [ -f "$HOME/$file" ] && [ ! -L "$HOME/$file" ]; then
         mkdir -p "$backup/$(dirname "$file")"
-        cp -n "$HOME/$file" "$backup/$file"
+        [ -e "$backup/$file" ] || cp "$HOME/$file" "$backup/$file"
     fi
 done
 
@@ -35,6 +35,9 @@ ensure_line() {
 ensure_line "$HOME/.zshrc" "export DOT_DIR=\"$DOT_DIR\"; source \"\$DOT_DIR/zsh/zshrc\" $MARKER"
 ensure_line "$HOME/.bashrc" "export DOT_DIR=\"$DOT_DIR\"; . \"\$DOT_DIR/bash/bashrc\" $MARKER"
 
+if [ -L "$HOME/.bash_profile" ]; then
+    rm "$HOME/.bash_profile"
+fi
 if ! grep -qs '\.bashrc' "$HOME/.bash_profile"; then
     printf '%s\n' '[ -f ~/.bashrc ] && . ~/.bashrc' >> "$HOME/.bash_profile"
 fi
